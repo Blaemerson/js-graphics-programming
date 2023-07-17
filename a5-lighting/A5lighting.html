@@ -1,0 +1,327 @@
+<!--
+Author: Blake Savage
+Course: COSC 4345.001
+Instructor: Dr. Leonard Brown
+Date: April 22, 2022
+Description: This program renders a scene featuring a room with a cube and
+             a moving light source using Gouraud shading.
+-->
+<html>
+<style type="text/css">
+  canvas { background: red; }
+</style>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 aPos;
+attribute vec4 aCol;
+varying vec4 v_color;
+
+void main()
+{
+  gl_PointSize = 3.0;
+  gl_Position = aPos;
+  v_color = aCol;
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+varying vec4 v_color;
+
+
+void main()
+{
+   gl_FragColor = v_color;
+}
+</script>
+
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="initShaders.js"></script>
+<script type="text/javascript" src="matrices.js"></script>
+<script type="text/javascript" src="shapes3D.js"></script>
+<script type="text/javascript" src="projection.js"></script>
+<script type="text/javascript" src="lighting.js"></script>
+
+<script>
+window.addEventListener("keydown", keycheck, false);
+
+function keycheck(e) {
+  // Toggle pause/unpause when the letter p is pressed
+  if (e.keyCode == "80") {
+    paused = !paused;
+  }
+  // Toggle light line when the letter l is pressed
+  if (e.keyCode == "76") {
+    showLight = !showLight;
+  }
+  // Toggle the light when spacebar is pressed
+  if (e.keyCode == "32") {
+    lightOn = !lightOn;
+  }
+  // Toggle debug when the letter d is pressed
+  if (e.keyCode == "68") {
+    debug = !debug;
+  }
+}
+</script>
+
+
+<script type="text/javascript">
+var canvas;
+var gl;
+var colorUniformLocation;
+
+var offset = 0;
+var degrees = 0.0;
+var paused = false;
+var showLight = false;
+var lightOn = true;
+var debug = false;
+
+// 3D World coordinate points
+var originalPoints = CenteredRect3D(0, -100, 0, 300, 300, 300); // Cube
+originalPoints = originalPoints.concat(CenteredRect3D(0, -250, 0, 1000, 0, 1000)); // Floor
+originalPoints = originalPoints.concat(CenteredRect3D(0, 750, 0, 1000, 0, 1000)); // Ceiling
+originalPoints = originalPoints.concat(CenteredRect3D(0, 250, -500, 1000, 1000, 0)); // Wall on the right
+originalPoints = originalPoints.concat(CenteredRect3D(-500, 250, 0, 0, 1000, 1000)); // Wall on the left
+
+var faces = [];
+for (var i=0; i<originalPoints.length; i+=8)
+{
+  faces.push( [i,   i+1, i+3, i+2],
+              [i+5, i+4, i+6, i+7],
+              [i+4, i,   i+2, i+6],
+              [i+1, i+5, i+7, i+3],
+              [i+2, i+3, i+7, i+6],
+              [i+1, i,   i+4, i+5]);
+}
+
+window.onload = init;
+
+function render()
+{
+   gl.viewport(0, 0, canvas.width, canvas.height);
+   gl.clearColor(0.0, 0.2, 0.0, 1.0);
+   gl.clear(gl.COLOR_BUFFER_BIT);
+
+   if (!paused)
+   {
+     degrees+=1;
+   }
+   if (degrees > 360)
+   {
+     degrees = 0;
+   }
+
+   // Transformation Matrix
+   var Mtransform = RotationYMatrix3D(degrees);
+
+   // View-plane normal vector, N, is P0 - Pref
+   var p0 = [500.0, 300.0, 400.0, 1.0];
+   var pref = [0.0, 0.0, 0.0, 1.0];
+   var prp = [0.0, 0.0, 400.0, 1.0];
+   var zvp = -500;
+
+   var lightPositions = [ [0.0, 300.0, 300.0, 1] ];
+   lightPositions[0] = VectorMultiply3D(Mtransform, lightPositions[0]);
+   var lightDirections = [ [0.0, 0.0, 0.0, 1] ];
+   var lightIntensities = [!lightOn ? 0.0 : 0.3];
+   var ambientLight = 0.4;
+   var surfaceEmission = 0.0;
+
+   var Mwcvc = getWorldToViewingMatrix3D(p0, pref);
+
+   var Mperspective = getPerspectiveProjectionMatrix(prp, zvp);
+   var Mproject = MatrixMultiply3D(Mperspective, Mwcvc);
+   var Mfinal = Mproject;
+
+   var projectedPoints = [];
+   var worldPoints = [];
+   for (var i=0; i<originalPoints.length; i++)
+   {
+     projectedPoints[i] = VectorMultiply3D(Mproject, originalPoints[i]);
+     for (var j=0; j<=3; j++)
+     {
+       if ((projectedPoints[i][3] != 0) && (projectedPoints[i][3] != 1.0))
+       {
+         projectedPoints[i][j] /= projectedPoints[i][3];
+       }
+     }
+     if (debug)
+     {
+       console.log(projectedPoints[i][0], projectedPoints[i][1], projectedPoints[i][2], projectedPoints[i][3])
+     }
+     worldPoints[i] = originalPoints[i];
+   }
+
+   // Sort faces according to depth
+   var depth = [];
+   var faceOrder = [];
+   for (var i=0; i<faces.length; i++)
+   {
+     var pt1 = projectedPoints[faces[i][0]];
+     var pt2 = projectedPoints[faces[i][1]];
+     var pt3 = projectedPoints[faces[i][2]];
+     var pt4 = projectedPoints[faces[i][3]];
+
+     depth[i] = Math.min(pt1[2], pt2[2], pt3[2], pt4[2]);
+     faceOrder[i] = i;
+   }
+   for (var i=faces.length-1; i>0; i--)
+   {
+     for (var j=0; j<i; j++)
+     {
+       if (depth[j] > depth[j+1])
+       {
+         var t = depth[j];
+         depth[j] = depth[j+1];
+         depth[j+1] = t;
+         t = faceOrder[j];
+         faceOrder[j] = faceOrder[j+1];
+         faceOrder[j+1] = t;
+       }
+     }
+   }
+
+   for (var i=0; i<faces.length; i++)
+   {
+     var x = faceOrder[i];
+     var pts = [ projectedPoints[faces[x][0]],
+                 projectedPoints[faces[x][1]],          
+                 projectedPoints[faces[x][2]],
+                 projectedPoints[faces[x][3]],
+               ];
+
+     // Display face (if it is visible)
+     if (visibleFace(pts[0], pts[1], pts[2]))
+     {
+       var vertices = [];
+       vertices = [ 0.001*pts[0][0]/pts[0][3], 0.001*pts[0][1]/pts[0][3],
+                    0.001*pts[1][0]/pts[1][3], 0.001*pts[1][1]/pts[1][3],
+                    0.001*pts[2][0]/pts[2][3], 0.001*pts[2][1]/pts[2][3],
+                    0.001*pts[3][0]/pts[3][3], 0.001*pts[3][1]/pts[3][3]
+                  ];
+
+       var wps = [ worldPoints[faces[x][0]],
+                   worldPoints[faces[x][1]],           
+                   worldPoints[faces[x][2]],
+                   worldPoints[faces[x][3]],
+                 ];
+
+       // Compute intensity of face (value)
+       var colors = [];
+       var rgb = [];
+
+       // Color walls/floor differently from cube
+       var hue = x < 6 ? 5.0 : 300.0;
+       var saturation = x < 6 ? 1.0 : 0.3; 
+
+       var value = 0.0;
+
+       var vec1 = [ wps[0][0]-wps[1][0], wps[0][1]-wps[1][1], wps[0][2]-wps[1][2] ];
+       var vec2 = [ wps[2][0]-wps[1][0], wps[2][1]-wps[1][1], wps[2][2]-wps[1][2] ];
+       var N = crossProduct(vec2, vec1);
+
+       for (var j=0; j<wps.length; j++)
+       {
+           var wp = wps[j];
+           var V = [ p0[0]-wp[0], p0[1]-wp[1], p0[2]-wp[2] ];
+           value = intensity(wp, N, V, lightPositions, lightDirections, lightIntensities, ambientLight, surfaceEmission);
+           if (value > 1.0)
+           {
+              value = 1.0;
+           }
+           rgb = hsv2rgb(hue, saturation, value);
+           colors.push(rgb[0], rgb[1], rgb[2], 1.0);
+       }
+
+       // Draw Arrays using vertices and colors
+       var program = initShaders(gl, "vertex-shader", "fragment-shader");
+
+       var aPos = gl.getAttribLocation(program, "aPos");
+       var aCol = gl.getAttribLocation(program, "aCol");
+
+       var positionBuffer = gl.createBuffer();
+       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+       var colorBuffer = gl.createBuffer();
+       gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+ 
+       gl.useProgram(program);
+
+       gl.enableVertexAttribArray(aPos);
+       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+       gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+       gl.enableVertexAttribArray(aCol);
+       gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+       gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 0, 0);
+
+       gl.drawArrays(gl.TRIANGLE_FAN, 0, vertices.length/2);
+
+       // Show light position and direction
+       if (showLight)
+       {
+         vertices = [];
+         colors = [];
+
+         // Draw lights
+         for (var z=0; z<lightPositions.length; z++)
+         {
+           var projectedLight = VectorMultiply3D(Mproject, lightPositions[z]);
+           var projectedDir = VectorMultiply3D(Mproject, lightDirections[z]);
+           vertices.push(0.001*projectedLight[0]/projectedLight[3], 0.001*projectedLight[1]/projectedLight[3]);
+           vertices.push(0.001*projectedDir[0]/projectedDir[3], 0.001*projectedDir[1]/projectedDir[3]);
+           colors.push(1.0, 1.0, 1.0, 1.0);
+           colors.push(1.0, 1.0, 1.0, 1.0);
+         }
+       }
+
+       positionBuffer = gl.createBuffer();
+       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+       colorBuffer = gl.createBuffer();
+       gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+ 
+       gl.enableVertexAttribArray(aPos);
+       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+       gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+       gl.enableVertexAttribArray(aCol);
+       gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+       gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 0, 0);
+   
+       gl.drawArrays(gl.LINES, 0, vertices.length/2);
+
+     }
+   }
+
+   requestAnimFrame(render);
+}
+
+function init() 
+{
+  canvas = document.getElementById("gl-canvas");
+  gl = WebGLUtils.setupWebGL(canvas);
+  if (!gl)
+  {
+    alert("WebGL isn't available");
+  }
+
+  render();
+}
+
+
+</script>
+
+<body>
+<canvas id="gl-canvas" width="500" height="500">
+   Oops... your browser doesn't support HTML5's Canvas elements!
+</canvas>
+</body>
+</html>
