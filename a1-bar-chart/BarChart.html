@@ -1,0 +1,99 @@
+<!--
+Author:         Blake Savage
+Course:         COSC 4345.001
+Date:           2/9/2022
+Instructor:     Dr. Leonard Brown
+Description:    This assignment uses WebGL primitives to draw a bar graph with a trend arrow.
+-->
+
+<html>
+<style type="text/css">
+    canvas { background: red; }
+</style>
+
+<!-- Set up vertex shader -->
+<script id="vertex-shader" type="x-shader/x-vertex">
+    attribute vec4 vPos;
+    void main() {
+        gl_Position = vPos;
+    }
+</script>
+
+<!-- Set up fragment shader -->
+<script id="fragment-shader" type="x-shader/x-fragment">
+    precision mediump float;
+    uniform vec4 u_color;
+    void main() {
+        gl_FragColor = u_color;
+    }
+</script>
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="initShaders.js"></script>
+<script type="text/javascript" src="graphVertices.js"></script>
+
+<script type="text/javascript">
+    var canvas;
+    var gl;
+    window.onload = init;
+
+    function init() {
+        canvas = document.getElementById("gl-canvas");
+        gl = WebGLUtils.setupWebGL(canvas);
+        if (!gl) {
+            alert("WebGL isn't available");
+        }
+
+        var program = initShaders(gl, "vertex-shader", "fragment-shader");
+
+        var vPos = gl.getAttribLocation(program, "vPos");
+        var colorUniformLocation = gl.getUniformLocation(program, "u_color");
+        var buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+        vertices = barPoints();
+
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0.25, 0.25, 0.85, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(program);
+        gl.enableVertexAttribArray(vPos);
+        gl.vertexAttribPointer(vPos, 2, gl.FLOAT, false, 0, 0);
+
+        // Colors for each bar; taller bars get a brighter color, while shorter ones get a darker color
+        var colors = [
+            [0.63, 0.55, 0.35, 1],
+            [0.83, 0.70, 0.50, 1],
+            [0.78, 0.65, 0.45, 1],
+            [0.88, 0.75, 0.45, 1],
+            [0.98, 0.85, 0.65, 1],
+            [0.83, 0.70, 0.50, 1],
+            [0.63, 0.55, 0.35, 1],
+            [0.58, 0.50, 0.30, 1],
+        ];
+
+        // Drawing the bars
+        for (var i = 0; i < 8; i++) {
+            gl.uniform4f(colorUniformLocation, colors[i][0], colors[i][1], colors[i][2], 1);
+            gl.drawArrays(gl.TRIANGLE_FAN, (i * 4), 4);
+        }
+
+        // Drawing the line
+        gl.uniform4f(colorUniformLocation, 0.58, 0.75, 0.78, 1);
+        for (var i = 0; i < 16; i += 2) {
+            gl.drawArrays(gl.TRIANGLE_FAN, 32 + i, 4);
+        }
+        // Draw the arrow head
+        gl.drawArrays(gl.TRIANGLES, 48, 3);
+    }
+</script>
+
+<body>
+<canvas id="gl-canvas" width="768" height="512">
+    Oops... your browser doesn't support HTML5's Canvas elements!
+</canvas>
+</body>
+</html>
