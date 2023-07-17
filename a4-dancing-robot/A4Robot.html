@@ -1,0 +1,320 @@
+<!--
+Author: Blake Savage
+Course: COSC 4345.001
+Instructor: Dr. Leonard Brown
+Date: April 8, 2022
+Description: This program animates a controllable dancing robot.
+             Controls are 'x' to power on and 'd' to dance when powered on.
+-->
+<html>
+<style type="text/css">
+  canvas { background: red; }
+</style>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPos;
+
+void main()
+{
+  gl_PointSize = 1.0;
+  gl_Position = vPos;
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+uniform vec4 u_color;
+
+void main()
+{
+  gl_FragColor = u_color;
+}
+</script>
+
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="initShaders.js"></script>
+<script type="text/javascript" src="A4lines.js"></script>
+<script type="text/javascript" src="A4matrices.js"></script>
+<script type="text/javascript" src="A4projection.js"></script>
+<script type="text/javascript" src="A4shapes.js"></script>
+
+<script>
+window.addEventListener("keydown", keycheck, false);
+
+function keycheck(e) {
+  // Toggle power when the letter 'x' is pressed
+  if (e.keyCode == "88") {
+    powered = !powered;
+    if (dancing)
+    {
+      dancing = false;
+    }
+  }
+  // Toggle robot dancing when powered on and letter 'd' is pressed
+  if (e.keyCode == "68" && powered)
+  {
+    dancing = !dancing;
+  }
+  // For debugging, advance 1 frame by pressing 'a'
+  // Robot must not be dancing to have any effect
+  if (e.keyCode == "65")
+  {
+    advanceFrame = true;
+  }
+}
+
+</script>
+
+<script type="text/javascript">
+var canvas;
+var gl;
+var colorUniformLocation;
+
+var offset = 0;
+var degrees = 0;
+
+var powered = false;
+var dancing = false;
+var advanceFrame = false;
+
+// 3D World coordinate points
+var originalPoints = makeCube(-50.0, 100.0, 250.0, 100, 100, 100);                // Nose
+originalPoints = originalPoints.concat(makeCube(-125, 220, 161, 80, 70, 10));     // Right eye
+originalPoints = originalPoints.concat(makeCube(50, 220, 161, 80, 70, 10));       // Left eye
+originalPoints = originalPoints.concat(makeCube(-150, 50, 150, 300, 300, 300));   // Head
+originalPoints = originalPoints.concat(makeCube(-100, -250, 100, 200, 300, 200)); // Torso
+originalPoints = originalPoints.concat(makeCube(-300, -100, 40, 200, 70, 70));    // Right arm
+originalPoints = originalPoints.concat(makeCube(100, -100, 40, 200, 70, 70));     // Left arm
+originalPoints = originalPoints.concat(makeCube(-90, -500, 40, 70, 250, 80));     // Right leg
+originalPoints = originalPoints.concat(makeCube(20, -500, 40, 70, 250, 80));      // Left leg
+originalPoints = originalPoints.concat(makeCube(-30, -100, 40, 50, 50, 50));      // Heart
+
+// Assign faces to the cubes
+var faces = [];
+for (var i=0; i<originalPoints.length; i+=8)
+{
+  faces.push( [i,   i+1, i+3, i+2],
+              [i+5, i+4, i+6, i+7],
+              [i+4, i,   i+2, i+6],
+              [i+1, i+5, i+7, i+3],
+              [i+2, i+3, i+7, i+6],
+              [i+1, i,   i+4, i+5]);
+}
+
+var camera = [0.0, 0.0, 0.0, 1.0];
+
+window.onload = init;
+
+function render()
+{
+  if (powered && dancing || powered && advanceFrame)
+  {
+    offset+=1;
+    degrees+=2;
+  }
+  if (offset > 500)
+  {
+    offset -= 500;
+  }
+  if (degrees > 360)
+  {
+    degrees -= 360;
+  }
+
+  var Midentity = TranslateMatrix3D(0, 0, 0);
+  var McameraTransform = TranslateMatrix3D(100, 0, 500);
+
+  // View-plane normal vector, N, is P0 - Pref
+  var p0 = camera;
+  p0 = VectorMultiply3D(McameraTransform, p0);
+  var pref = [0.0, 0.0, 0.0, 1.0];
+
+  var pview = [0.0, 0.0, -500.0, 1.0];
+  var prp = [0.0, 0.0, 500.0, 1.0];
+  var zvp = -500.0;
+
+  var Mwcvc = getWorldToViewingMatrix3D(p0, pref);
+
+  // Perspective Projection
+  var Mperspective = getPerspectiveProjectionMatrix(prp, zvp);
+  var Mproject = MatrixMultiply3D(Mperspective, Mwcvc);
+
+  // Transformations
+  var Mrightarmtransform = MatrixMultiply3D(MatrixMultiply3D(TranslateMatrix3D(0, -65, 0),
+                                                             RotationXMatrix3D(degrees)),
+                                                             TranslateMatrix3D(0, 65, 0));
+  Mrightarmtransform = MatrixMultiply3D(Mproject, Mrightarmtransform);
+
+  var Mleftarmtransform = MatrixMultiply3D(MatrixMultiply3D(TranslateMatrix3D(0, -65, 0),
+                                                            RotationXMatrix3D(-degrees)),
+                                                            TranslateMatrix3D(0, 65, 0));
+  Mleftarmtransform = MatrixMultiply3D(Mproject, Mleftarmtransform);
+  var Mheadtransform = MatrixMultiply3D(Mproject, RotationYMatrix3D(degrees));
+
+  // Applying the transformations
+  var projectedPoints = []
+  for (var i=0; i<originalPoints.length; i++)
+  {
+    if (i < 32)
+    { // Rotate the head, eyes, and nose
+      projectedPoints[i] = VectorMultiply3D(Mheadtransform, originalPoints[i]);
+    }
+    else if (i >= 40 && i < 48)
+    { // Rotate the right arm
+      projectedPoints[i] = VectorMultiply3D(Mrightarmtransform, originalPoints[i]);
+    }
+    else if (i >= 48 && i < 56)
+    { // Rotate the left arm
+      projectedPoints[i] = VectorMultiply3D(Mleftarmtransform, originalPoints[i]);
+    }
+    else
+    { // Just project the points
+      projectedPoints[i] = VectorMultiply3D(Mproject, originalPoints[i]);
+    }
+
+    for (var j=0; j<=3; j++)
+    {
+      if (projectedPoints[i][3] != 0)
+      {
+        projectedPoints[i][j] /= projectedPoints[i][3];
+      }
+    }
+  }
+
+  // Sort faces according to depth
+  var depth = [];
+  var faceOrder = [];
+  for (var i=0; i<faces.length; i++)
+  {
+    var pt1 = projectedPoints[faces[i][0]];
+    var pt2 = projectedPoints[faces[i][1]];
+    var pt3 = projectedPoints[faces[i][2]];
+    var pt4 = projectedPoints[faces[i][3]];
+
+    depth[i] = Math.min(pt1[2], pt2[2], pt3[2], pt4[2]);
+    faceOrder[i] = i;
+  }
+  for (var i=faces.length-1; i>0; i--)
+  {
+    for (var j=0; j<i; j++)
+    {
+      if (depth[j] > depth[j+1])
+      {
+        var t = depth[j];
+        depth[j] = depth[j+1];
+        depth[j+1] = t;
+        t = faceOrder[j];
+        faceOrder[j] = faceOrder[j+1];
+        faceOrder[j+1] = t;
+      }
+    }
+  }
+
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  for (var i=0; i<faces.length; i++)
+  {
+    var x = faceOrder[i];
+    var pt1 = projectedPoints[faces[x][0]];
+    var pt2 = projectedPoints[faces[x][1]];
+    var pt3 = projectedPoints[faces[x][2]];
+    var pt4 = projectedPoints[faces[x][3]];
+
+    // Display face (if it is visible)
+    if (visibleFace(pt1, pt2, pt3, pt4) || (x>=24 && x<30)) // either visible or the transparent torso (in which case draw its outlines)
+    {
+      var vertices = [];
+      vertices = [ 0.001*(pt1[0]/pt1[3]), 0.001*(pt1[1]/pt1[3]),
+                   0.001*(pt2[0]/pt2[3]), 0.001*(pt2[1]/pt2[3]),
+                   0.001*(pt3[0]/pt3[3]), 0.001*(pt3[1]/pt3[3]),
+                   0.001*(pt4[0]/pt4[3]), 0.001*(pt4[1]/pt4[3]) ];
+
+      // Draw filled face -- except for the torso
+      if (!(x >= 24 && x < 30))
+      {
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        if (x >= 6 && x < 18)
+        {
+          // Color the eyes
+          if (dancing)
+          {
+            gl.uniform4f(colorUniformLocation, 1.0, 1.0, 0.0, 1.0);
+          }
+          else
+          {
+            gl.uniform4f(colorUniformLocation, 0.5, 0.5, 0.5, 1.0);
+          }
+        }
+        else if (x >= 54 && x < 60)
+        {
+          // Color the heart
+          if (powered)
+          {
+            gl.uniform4f(colorUniformLocation, 1.0, 0.0, 0.0, 1.0);
+          }
+          else
+          {
+            gl.uniform4f(colorUniformLocation, 0.5, 0.5, 0.5, 1.0);
+          }
+        }
+        else
+        {
+          gl.uniform4f(colorUniformLocation, 0.6, 0.7, 0.8, 1.0);
+        }
+        gl.drawArrays(gl.TRIANGLE_FAN, 0, vertices.length/2);
+      }
+
+      var vertices = drawOutline(pt1, pt2, pt3, pt4, 1);
+
+      // Scale vertices
+      for (var z=0; z<vertices.length; z++)
+      {
+        vertices[z] /= 1000.0;
+      }
+
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+      gl.uniform4f(colorUniformLocation, 0.3, 0.4, 0.5, 1.0);
+      gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+    }
+  }
+
+  advanceFrame = false;
+  requestAnimFrame(render);
+}
+
+
+
+function init() {
+   canvas = document.getElementById("gl-canvas");
+   gl = WebGLUtils.setupWebGL(canvas);
+   if (!gl) {
+      alert("WebGL isn't available");
+   }
+
+   var program = initShaders(gl, "vertex-shader", "fragment-shader");
+
+   var vPos = gl.getAttribLocation(program, "vPos");
+   colorUniformLocation = gl.getUniformLocation(program, "u_color");
+   var buffer = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+   gl.viewport(0, 0, canvas.width, canvas.height);
+   gl.clearColor(0.9, 0.9, 0.9, 1.0);
+   gl.clear(gl.COLOR_BUFFER_BIT);
+
+   gl.useProgram(program);
+   gl.enableVertexAttribArray(vPos);
+   gl.vertexAttribPointer(vPos, 2, gl.FLOAT, false, 0, 0);
+
+   render();
+}
+
+
+</script>
+
+<body>
+<canvas id="gl-canvas" width="500" height="500">
+   Oops... your browser doesn't support HTML5's Canvas elements!
+</canvas>
+</body>
+</html>
