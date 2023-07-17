@@ -1,0 +1,221 @@
+<!--
+    Author: Blake Savage
+    Course: COSC 4345.001
+    Date:   3/25/2022
+    Instructor: Dr. Leonard Brown
+    Description: This program displays a looping, Easter-inpired animation by
+                 manipulating shapes using transformation matrices.
+-->
+<html>
+<style type="text/css">
+    canvas { background: red; }
+</style>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPos;
+
+void main()
+{
+    gl_PointSize = 5.0;
+    gl_Position = vPos;
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+uniform vec4 u_color;
+
+void main()
+{
+   gl_FragColor = u_color;
+}
+</script>
+
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="initShaders.js"></script>
+<script type="text/javascript" src="matrices.js"></script>
+<script type="text/javascript" src="shapes.js"></script>
+
+<script type="text/javascript">
+var canvas;
+var gl;
+var colorUniformLocation;
+
+window.onload = init;
+
+// Identity matrix
+var identity = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+
+// Transformation matrix
+var m = identity;
+
+// Initialize shapes that will be drawn.
+var ear1   = drawEllipse(-160, 50, 300, 100);
+var ear2   = drawEllipse(0, -70, 310, 100);
+var head   = drawEllipse(-270, -190, 240, 210);
+var body   = drawEllipse(100, -350, 400, 300);
+var eye    = drawCircle(-350, -170, 30);
+var sun    = drawCircle(1300, 470, 250);
+var tail   = drawCircle(500, -270, 150);
+var nose   = [-400, -200, -480, -220, -420, -250];
+var ground = [-1000.0, -600.0, -1000.0, -1000.0, 1000.0, -3200.0, 1000.0, -600.0];
+var sky    = [-2000.0, -800.0, -2000.0, -4000.0, 2000.0, -4000.0, 2000.0, -800.0];
+
+var timer = 0;
+
+// Scale and render new shapes defined by <vertices> with color <rgb>
+function renderShape(shape, rgb)
+{
+    var vertices = [];
+    // Scale each point
+    for (var i = 0; i < shape.length; i++)
+    {
+        vertices.push(shape[i] / 1000.0);
+    }
+
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+    gl.uniform4f(colorUniformLocation, rgb[0], rgb[1], rgb[2], 1.0);
+    gl.drawArrays(gl.TRIANGLE_FAN, 0, vertices.length / 2);
+}
+
+// Render the animation
+function render()
+{
+    timer++;
+
+    // Rotate the back ear using the composite matrix formed by m.
+    // m = | 1, 0, -480 |   | cos(0.2 * pi/180), -sin(+-0.2 * pi/180), 0 |   | 1, 0,  480 |
+    //     | 0, 1,    0 | * | sin(0.2 * pi/180),  cos(+-0.2 * pi/180), 0 | * | 0, 1,    0 |
+    //     | 0, 0,    1 |   |         0,                    0,         1 |   | 0, 0,    1 |
+    m = Rotation3D(-480, 0, timer <= 50 ? -0.20 : 0.20);
+    for (var i = 0; i < ear1.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [ear1[i], ear1[i + 1], 1]);
+        ear1[i] = p[0];
+        ear1[i + 1] = p[1];
+    }
+
+    // Rotate the front ear using the composite matrix formed by m.
+    // m = | 1, 0,-430 |   | cos(+-0.1 * pi/180), -sin(+-0.1 * pi/180), 0 |   | 1, 0,  430 |
+    //     | 0, 1,   0 | * | sin(+-0.1 * pi/180),  cos(+-0.1 * pi/180), 0 | * | 0, 1,    0 |
+    //     | 0, 0,   1 |   |           0,                    0,         1 |   | 0, 0,    1 |
+    m = Rotation3D(-430, 0, timer <= 50 ? -0.10 : 0.10);
+    for (var i = 0; i < ear2.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [ear2[i], ear2[i + 1], 1]);
+        ear2[i] = p[0];
+        ear2[i + 1] = p[1];
+    }
+
+    // Rotate the sky about pivot (0, -700) using the composite matrix formed by m.
+    // m = | 1, 0,    0 |   | cos(0.35 * pi/180), -sin(0.35 * pi/180), 0 |   | 1, 0,   0 |
+    //     | 0, 1, -700 | * | sin(0.35 * pi/180),  cos(0.35 * pi/180), 0 | * | 0, 1, 700 |
+    //     | 0, 0,    1 |   |          0,                  0,          1 |   | 0, 0,   1 |
+    m = Rotation3D(0, -700, 0.35);
+    for (var i = 0; i < sky.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [sky[i], sky[i + 1], 1]);
+        sky[i] = p[0];
+        sky[i + 1] = p[1];
+    }
+
+    // Grow or shrink the tail using the composite matrix formed by m.
+    // m = | 1, 0,  500 |   | 1 +- 0.005,     0,     0 |   | 1, 0, -500 |
+    //     | 0, 1, -270 | * |      0,    1 +- 0.005, 0 | * | 0, 1,  270 |
+    //     | 0, 0,    1 |   |      0,         0,     1 |   | 0, 0,    1 |
+    m = Scaling3D(500, -270, timer <= 50 ? 0.995 : 1.005);
+    for (var i = 0; i < tail.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [tail[i], tail[i + 1], 1]);
+        tail[i] = p[0];
+        tail[i + 1] = p[1];
+    }
+
+    // If sun reaches a certain point offscreen, reset sun and sky
+    if (sun[0] < -7000)
+    {
+        sun = drawCircle(1300, 470, 250);
+        sky = [-2000.0, -800.0, -2000.0, -4000.0, 2000.0, -4000.0, 2000.0, -800.0];
+    }
+    // Translate the sun to the left using the translation matrix m.
+    // m = | 1, 0, -8 |
+    //     | 0, 1,  0 |
+    //     | 0, 0,  1 |
+    m = Translation3D(-8, 0);
+    for (var i = 0; i < sun.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [sun[i], sun[i + 1], 1]);
+        sun[i] = p[0];
+        sun[i + 1] = p[1];
+    }
+
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Render all objects
+    renderShape(sky,    [0.00, 0.00, 0.40]);
+    renderShape(sun,    [0.90, 0.80, 0.20]);
+    renderShape(ground, [0.00, 0.90, 0.30]);
+    renderShape(ear1,   [0.85, 0.80, 0.85]);
+    renderShape(body,   [0.92, 0.92, 0.98]);
+    renderShape(head,   [0.95, 0.95, 0.95]);
+    renderShape(ear2,   [0.95, 0.90, 0.95]);
+    renderShape(tail,   [1.00, 1.00, 1.00]);
+    renderShape(nose,   [0.90, 0.60, 0.90]);
+    renderShape(eye,    [0.30, 0.30, 0.50]);
+
+    // Reset animation timer
+    if (timer == 100)
+    {
+        timer = 0;
+    }
+
+    requestAnimFrame(render);
+}
+
+function init()
+{
+    canvas = document.getElementById("gl-canvas");
+    gl = WebGLUtils.setupWebGL(canvas);
+    if (!gl)
+    {
+        alert("WebGL isn't available");
+    }
+
+    var program = initShaders(gl, "vertex-shader", "fragment-shader");
+
+    var vPos = gl.getAttribLocation(program, "vPos");
+    colorUniformLocation = gl.getUniformLocation(program, "u_color");
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.50, 0.50, 0.8, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.useProgram(program);
+    gl.enableVertexAttribArray(vPos);
+    gl.vertexAttribPointer(vPos, 2, gl.FLOAT, false, 0, 0);
+
+    // Put the back ear at a tilt before animating using the rotation matrix m
+    // m = | cos(20 * pi/180), -sin(20 * pi/180), 0 |
+    //     | sin(20 * pi/180),  cos(20 * pi/180), 0 |
+    //     |        0,                 0,         1 |
+    m = Rotation3D(0, 0, 20);
+    for (var i = 0; i < ear1.length; i += 2)
+    {
+        p = VectorMultiply3D(m, [ear1[i], ear1[i + 1], 1]);
+        ear1[i] = p[0];
+        ear1[i + 1] = p[1];
+    }
+
+    render();
+}
+</script>
+
+<body>
+<canvas id="gl-canvas" width="500" height="500">
+    Oops... your browser doesn't support HTML5's Canvas elements!
+</canvas>
+</body>
+</html>
