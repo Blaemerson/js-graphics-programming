@@ -1,0 +1,138 @@
+<!--
+      Author: Blake Savage
+      Date: 2/28/2022
+      Instructor: Dr. Leonard Brown
+      Course: COSC 4345.001
+      Description: This program uses the Midpoint Circle Drawing Algorithm to
+      draw the five Olympic rings
+-->
+
+<html>
+<style type="text/css">
+canvas { background: red; }
+</style>
+
+<!-- Set up the vertex shader -->
+<script id="vertex-shader" type="x-shader/x-vertex">
+attribute vec4 vPos;
+
+void main()
+{
+  gl_PointSize = 1.0;
+  gl_Position = vPos;
+}
+</script>
+
+<!-- Set up the fragment shader -->
+<script id="fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+uniform vec4 u_color;
+
+void main()
+{
+  gl_FragColor = u_color;
+}
+</script>
+
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="initShaders.js"></script>
+<script type="text/javascript" src="circles.js"></script>
+
+<script type="text/javascript">
+var canvas;
+var gl;
+
+window.onload = init;
+
+function init()
+{
+  canvas = document.getElementById("gl-canvas");
+  gl = WebGLUtils.setupWebGL(canvas);
+  if (!gl)
+  {
+    alert("WebGL isn't available");
+  }
+
+  var program = initShaders(gl, "vertex-shader", "fragment-shader");
+
+  var vPos = gl.getAttribLocation(program, "vPos");
+  var colorUniformLocation = gl.getUniformLocation(program, "u_color");
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.3, 0.3, 0.3, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  gl.useProgram(program);
+  gl.enableVertexAttribArray(vPos);
+  gl.vertexAttribPointer(vPos, 2, gl.FLOAT, false, 0, 0);
+
+  // 1st circle - Blue
+  var vertices = drawCircle(-450, 0.0, 300);
+  for (var i = 0; i < vertices.length; i++)
+  {
+    vertices[i] = vertices[i] / 1000.0;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  gl.uniform4f(colorUniformLocation, 0.3, 0.3, 1.0, 1.0);
+  gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+
+
+  // 2nd circle - yellow
+  var vertices = drawCircle(-240, -200, 300);
+  for (var i = 0; i < vertices.length; i++)
+  {
+    vertices[i] = vertices[i] / 1000.0;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  gl.uniform4f(colorUniformLocation, 1.0, 1.0, 0.3, 1.0);
+  gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+
+
+  // 3rd circle - black
+  vertices = drawCircle(0.0, 0.0, 300);
+  for (var i = 0; i < vertices.length; i++)
+  {
+    vertices[i] = vertices[i] / 1000.0;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  gl.uniform4f(colorUniformLocation, 0.0, 0.0, 0.0, 1.0);
+  gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+
+
+  // 4th circle - green
+  vertices = drawCircle(240, -200, 300);
+  for (var i = 0; i < vertices.length; i++)
+  {
+    vertices[i] = vertices[i] / 1000.0;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  gl.uniform4f(colorUniformLocation, 0.1, 0.6, 0.1, 1.0);
+  gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+
+
+  // 5th circle - red
+  vertices = drawCircle(450., 0.0, 300);
+  for (var i = 0; i < vertices.length; i++)
+  {
+    vertices[i] = vertices[i] / 1000.0;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  gl.uniform4f(colorUniformLocation, 1.0, 0.3, 0.3, 1.0);
+  gl.drawArrays(gl.POINTS, 0, vertices.length/2);
+}
+</script>
+
+<body>
+<canvas id="gl-canvas" width="500" height="500">
+  Oops... your browser doesn't support HTML5's Canvas elements!
+</canvas>
+</body>
+</html>
